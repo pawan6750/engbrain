@@ -57,6 +57,6 @@ def unknown_citations(text: str, evidence: list[dict]) -> list[str]:
 def make_provider(cfg: Settings) -> AIProvider:
     if cfg.llm_provider == "gemini" and cfg.llm_api_key:
         return GeminiProvider(cfg.llm_api_key, cfg.llm_model, cfg.llm_base_url)
-    if cfg.llm_provider == "openai" and cfg.llm_api_key:
+    if cfg.llm_provider in ("openai", "groq") and cfg.llm_api_key:
         return OpenAIProvider(cfg.llm_api_key, cfg.llm_model, cfg.llm_base_url)
     return MockProvider()

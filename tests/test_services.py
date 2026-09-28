@@ -2,6 +2,7 @@ import json, os, sys, tempfile, unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 from app import github_service as gh_mod, hindsight as hs_mod, llm as llm_mod
 from app.agent import ask, review
+from app.config import load_settings
 from app.demo import RECORDS
 from app.github_service import GitHubService, verify_webhook_signature
 from app.http_util import UpstreamError
@@ -91,6 +92,30 @@ class GitHub(unittest.TestCase):
 
 
 class Adapters(unittest.TestCase):
+    def test_groq_configuration(self):
+        from unittest.mock import patch
+        with patch.dict(os.environ, {
+            "LLM_PROVIDER": "groq", "GROQ_API_KEY": "groq-test-key", "LLM_API_KEY": "",
+            "GEMINI_API_KEY": "", "LLM_MODEL": "", "LLM_BASE_URL": "https://api.groq.com",
+        }, clear=True):
+            settings = load_settings()
+        provider = llm_mod.make_provider(settings)
+        self.assertEqual(settings.llm_provider, "groq")
+        self.assertEqual(settings.llm_api_key, "groq-test-key")
+        self.assertEqual(settings.llm_model, "llama-3.3-70b-versatile")
+        self.assertEqual(settings.llm_base_url, "https://api.groq.com/openai/v1")
+        self.assertIsInstance(provider, llm_mod.OpenAIProvider)
+
+    def test_generic_key_not_masked_by_blank_gemini_key(self):
+        from unittest.mock import patch
+        with patch.dict(os.environ, {
+            "LLM_PROVIDER": "openai", "LLM_API_KEY": "generic-test-key", "GEMINI_API_KEY": "",
+            "GROQ_API_KEY": "", "LLM_MODEL": "test-model", "LLM_BASE_URL": "https://api.groq.com/openai/v1/chat/completions",
+        }, clear=True):
+            settings = load_settings()
+        self.assertEqual(settings.llm_api_key, "generic-test-key")
+        self.assertEqual(settings.llm_base_url, "https://api.groq.com/openai/v1")
+
     def test_hindsight_hybrid_and_fallback(self):
         hs_mod.http_json = lambda *a, **k: {"results": [{"text": "duplicates came from retries (INC-103)"}]}
         m = seeded(hindsight=hs_mod.HindsightClient("http://h", "b"))
