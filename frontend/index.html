@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EngBrain — Remember what your engineering team learned</title>
+<style>
+:root{--bg:#0b0e14;--p:#131822;--b:#232b3b;--t:#e6eaf2;--m:#8b95a9;--a:#7c9cff;--w:#ffb454;--r:#ff6b6b;--g:#5ad19a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--t);font:14px/1.5 system-ui,sans-serif;display:flex;min-height:100vh}
+nav{width:200px;background:var(--p);border-right:1px solid var(--b);padding:16px 10px;flex-shrink:0}
+.logo{font-weight:700;letter-spacing:.12em;font-size:13px;padding:0 8px 14px;color:var(--a)}
+nav button{display:block;width:100%;text-align:left;background:none;border:0;color:var(--m);padding:8px 10px;border-radius:6px;cursor:pointer;font:inherit}
+nav button:hover,nav button.on{background:#1b2230;color:var(--t)}
+main{flex:1;padding:24px;max-width:980px;overflow:auto}
+h1{font-size:20px;margin:0 0 4px}.sub{color:var(--m);margin-bottom:18px}
+.card{background:var(--p);border:1px solid var(--b);border-radius:10px;padding:14px;margin-bottom:12px;animation:f .25s}
+@keyframes f{from{opacity:0;transform:translateY(4px)}}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.n{font-size:26px;font-weight:700}.l{color:var(--m);font-size:12px}
+input,textarea,select{width:100%;background:var(--bg);color:var(--t);border:1px solid var(--b);border-radius:8px;padding:10px;font:inherit}
+textarea{min-height:110px;font-family:ui-monospace,monospace}
+.btn{background:var(--a);color:#0b0e14;border:0;padding:9px 16px;border-radius:8px;font-weight:600;cursor:pointer;margin-top:8px}
+.btn.alt{background:#1b2230;color:var(--t);border:1px solid var(--b)}
+.chip{display:inline-block;border:1px solid var(--b);background:#1b2230;color:var(--a);border-radius:99px;padding:2px 10px;margin:2px 4px 2px 0;cursor:pointer;font-size:12px}
+.chip:hover{border-color:var(--a)}
+.tag{font-size:11px;padding:1px 8px;border-radius:4px;background:#1b2230;color:var(--m);margin-right:6px}
+.inc{color:var(--r)}.dep{color:var(--g)}.pull_request,.commit{color:var(--a)}.decision{color:var(--w)}
+.tl{border-left:2px solid var(--b);margin-left:8px;padding-left:16px}
+.ev{position:relative;padding:6px 0;cursor:pointer}.ev:before{content:"";position:absolute;left:-23px;top:13px;width:10px;height:10px;border-radius:50%;background:var(--a)}
+.ev.incident:before{background:var(--r)}.ev.deployment:before{background:var(--g)}.ev.decision:before{background:var(--w)}
+.warn{border-color:var(--w)}.fact{border-left:3px solid var(--g);padding-left:10px;margin:6px 0}
+.inf{border-left:3px solid var(--w);padding-left:10px;margin:6px 0;color:var(--w)}
+.hint{color:var(--m);font-size:12px}
+.live-status{position:fixed;right:14px;top:12px;z-index:2;padding:5px 10px;border:1px solid var(--b);border-radius:6px;background:var(--p);font-size:12px;color:var(--m)}
+.live-status.online{color:var(--g);border-color:var(--g)}.live-status.offline{color:var(--w);border-color:var(--w)}
+@media(max-width:700px){body{flex-direction:column}nav{width:100%;display:flex;overflow:auto}nav .logo{display:none}}
+</style></head><body>
+<nav><div class="logo">ENG BRAIN</div><div id="nav"></div></nav><div id="live-status" class="live-status offline">Connecting to live updates</div>
+<main id="v"></main>
+<script>
+/* ---------- API client: all logic, storage and secrets live on the backend ---------- */
+const api=async(path,body)=>{const r=await fetch("/api"+path,{method:body?"POST":"GET",headers:{"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});
+ const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(typeof j.detail==="string"?j.detail:"HTTP "+r.status);return j};
+const Memory={store:[],async load(){this.store=await api("/records")},
+ get(id){return this.store.find(r=>r.id===id)},
+ related(id,depth=2){const seen=new Set([id]);let fr=[id];for(let d=0;d<depth;d++){const nx=[];fr.forEach(i=>(this.get(i)?.rel||[]).forEach(j=>{if(!seen.has(j)&&this.get(j)){seen.add(j);nx.push(j)}}));fr=nx}return[...seen].filter(i=>i!==id).map(i=>this.get(i))},
+ timeline(svc){return this.store.filter(r=>!svc||r.service===svc)}};
+const ask=q=>api("/chat",{question:q}),review=(diff,service)=>api("/code-review",{diff,service});
+
+/* ---------- UI ---------- */
+const $=s=>document.querySelector(s),esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const PAGES=["Dashboard","Ask EngBrain","Timeline","Incidents","Code Review","Settings"];let page="Dashboard";
+const chip=r=>`<span class="chip" data-id="${esc(r.id)}">${esc(r.id)}</span>`;
+function nav(){$("#nav").innerHTML=PAGES.map(p=>`<button class="${p===page?"on":""}" data-p="${p}">${p}</button>`).join("")}
+function empty(){return`<div class="card">No memory loaded yet. <button class="btn" id="demo">Load Demo Engineering History</button></div>`}
+function detail(id){const r=Memory.get(id);if(!r)return"";return`<div class="card" id="dt"><span class="tag">${r.type}</span><span class="tag">${r.service}</span><span class="tag">${r.date}</span><h3 style="margin:8px 0">${esc(r.title)}</h3><p>${esc(r.text)}</p>${r.url?`<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Open GitHub source</a>`:""}<div class="hint">Related:</div>${Memory.related(id,1).map(chip).join("")||"<span class='hint'>none</span>"}</div>`}
+const views={
+ Dashboard(){const c=t=>Memory.store.filter(r=>r.type===t).length;const by={};Memory.store.filter(r=>r.type==="incident").forEach(r=>by[r.service]=(by[r.service]||0)+1);
+  return`<h1>Dashboard</h1><div class="sub">Engineering intelligence + persistent memory</div>${Memory.store.length?`<div class="grid">${[["Memories",Memory.store.length],["Incidents",c("incident")],["Decisions",c("decision")],["Deployments",c("deployment")],["Pull requests",c("pull_request")]].map(([l,n])=>`<div class="card"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("")}</div>
+  <div class="card"><b>Risk signals</b>${Object.entries(by).sort((a,b)=>b[1]-a[1]).map(([s,n])=>`<div>${s}: ${n} incident(s)</div>`).join("")}${Memory.store.some(r=>/rolled back/.test(r.text))?`<div class="inc">⚠ Rollback on record: v3.1.0</div>`:""}</div>
+  <div class="card"><b>Recent activity</b><br>${Memory.timeline().slice(-5).reverse().map(chip).join("")}</div><div id="out"></div>`:empty()}`},
+ "Ask EngBrain"(){return`<h1>Ask EngBrain</h1><div class="sub">Answers cite evidence; facts and inference are kept separate.</div>${Memory.store.length?"":empty()}
+  <input id="q" placeholder="Why does the retry mechanism exist in payment-service?"><button class="btn" id="go">Ask</button>
+  <div class="hint" style="margin-top:8px">Try: <span class="chip s">Why does the retry mechanism exist in payment-service?</span><span class="chip s">Have we seen duplicate payment problems before?</span><span class="chip s">What happened the last time we changed the database connection handling in payment-service?</span></div><div id="out" style="margin-top:14px"></div>`},
+ Timeline(){return`<h1>Engineering Timeline</h1><div class="sub">Click an event for details.</div>${Memory.store.length?`<select id="svc"><option value="">All services</option>${[...new Set(Memory.store.map(r=>r.service))].map(s=>`<option ${s==="payment-service"?"selected":""}>${s}</option>`).join("")}</select><div class="tl" id="tl" style="margin-top:14px"></div><div id="out"></div>`:empty()}`},
+ Incidents(){return`<h1>Incidents</h1><div class="sub">Click to trace related PRs, deployments and decisions.</div>${Memory.store.length?Memory.store.filter(r=>r.type==="incident").map(r=>`<div class="card"><span class="tag inc">${r.id}</span><span class="tag">${r.service}</span><span class="tag">${r.date}</span> <b>${esc(r.title)}</b><p>${esc(r.text)}</p>${Memory.related(r.id).map(chip).join("")}</div>`).join("")+`<div id="out"></div>`:empty()}`},
+
+ Settings(){const h=window._h||{},i=h.integrations||{},s=k=>i[k]?"<span style='color:var(--g)'>configured</span>":"<span class='hint'>not configured</span>";
+  return`<h1>Settings</h1><div class="sub">Integrations are configured on the server in <code>.env</code>. Keys never reach the browser.</div>
+  <div class="card"><b>Integration status</b><div>Hindsight memory: ${s("hindsight")}${window._h?.hindsight_error?` <span class="inc">write failed: ${esc(window._h.hindsight_error)}</span>`:""}</div><div>LLM answer layer: ${s("llm")}</div><div>GitHub token: ${s("github_token")} <span class="hint">(optional; public repos work without it)</span></div><div>GitHub webhook: ${s("github_webhook")}</div></div>
+  <div class="card"><b>Ingest a GitHub repository</b><br><br><input id="ghUrl" placeholder="https://github.com/owner/repo"><button class="btn alt" id="ingest">Ingest repository</button></div>
+  <div class="card"><b>Memory</b><br><br><button class="btn alt" id="sync">Sync all memories to Hindsight</button> <button class="btn alt" id="demo">Load demo history</button><div id="st" class="hint" style="margin-top:10px"></div></div>`},
+ "Code Review"(){return`<h1>Incident-Aware Code Review</h1><div class="sub">Compares a change with engineering memory and explains why it warns.</div>${Memory.store.length?"":empty()}
+  <select id="rs"><option>payment-service</option><option>auth-service</option><option>notification-service</option></select><br><br>
+  <textarea id="diff">- response = client.charge(order)
++ for attempt in range(5):
++     response = client.charge(order, timeout=2)
++     if response.ok: break   # retry on timeout</textarea><button class="btn" id="rv">Review change</button><div id="out" style="margin-top:14px"></div>`}};
+function render(){nav();$("#v").innerHTML=views[page]();if(page==="Timeline")tl()}
+function tl(){const s=$("#svc").value;$("#tl").innerHTML=Memory.timeline(s||null).map(r=>`<div class="ev ${r.type}" data-id="${r.id}"><span class="hint">${r.date}</span> · <span class="tag">${r.type}</span><b>${esc(r.title)}</b></div>`).join("")}
+document.addEventListener("click",e=>{const t=e.target;
+ if(t.dataset.p){page=t.dataset.p;render()}
+ else if(t.id==="demo")loadDemo();
+ else if(t.dataset.id){const o=$("#out");if(o){o.innerHTML=detail(t.dataset.id);$("#dt")?.scrollIntoView({behavior:"smooth"})}}
+ else if(t.classList.contains("s")){$("#q").value=t.textContent;$("#go").click()}
+ else if(t.id==="go")answer();
+ else if(t.id==="sync")syncHS();else if(t.id==="ingest")ingestGH();
+ else if(t.id==="rv")doReview()});
+document.addEventListener("change",e=>{if(e.target.id==="svc")tl()});
+document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.id==="q")answer()});
+async function answer(){const q=$("#q").value.trim();if(q.length<3)return;$("#out").innerHTML=`<div class="hint">Searching memory…</div>`;
+ let r;try{r=await ask(q)}catch(e){$("#out").innerHTML=`<div class="card warn">${esc(e.message)}</div>`;return}
+ const notes=(r.notes||[]).map(n=>`<div class="card warn hint">${esc(n)}</div>`).join("");
+ const sm=r.summary?`<div class="card"><span class="tag">AI summary</span><p>${esc(r.summary)}</p>${(r.unknown_ids||[]).length?`<p class="inf">Warning: the model cited ids not in the evidence (${esc(r.unknown_ids.join(", "))}). Ignore those.</p>`:""}</div>`:"";
+ $("#out").innerHTML=notes+sm+`<div class="card"><span class="tag">${r.intent}</span><p><b>${esc(r.answer)}</b></p>${r.facts.map(f=>`<div class="fact"><span class="hint">Historical fact</span><br>${esc(f)}</div>`).join("")}${r.inference.map(f=>`<div class="inf"><span class="hint">Inference</span><br>${esc(f)}</div>`).join("")}
+ <div style="margin-top:10px"><b>Sources</b><br>${r.evidence.length?r.evidence.map(chip).join(""):"<span class='hint'>No historical evidence found.</span>"}</div></div><div id="det"></div>`;
+ $("#out").querySelectorAll(".chip").forEach(c=>c.onclick=ev=>{ev.stopPropagation();$("#det").innerHTML=detail(c.dataset.id)})}
+async function doReview(){try{const r=await review($("#diff").value,$("#rs").value);
+ $("#out").innerHTML=r.warnings.length?`<div class="card warn"><b style="color:var(--w)">⚠ ${esc(r.verdict)}</b>${r.warnings.map(x=>`<p><b>Why:</b> ${esc(x.reason)}</p>${x.related.map(d=>`<div class="fact"><span class="tag">${esc(d.id)}</span>${esc(d.title)} — ${esc(d.text)}</div>`).join("")}`).join("")}<p class="hint">Pattern match on keywords; treat as a prompt for review, not a verdict.</p></div>`:`<div class="card">${esc(r.verdict)}</div>`}
+ catch(e){$("#out").innerHTML=`<div class="card warn">${esc(e.message)}</div>`}}
+const st=m=>{const e=$("#st");if(e)e.textContent=m};
+async function loadDemo(){try{await api("/demo/load",{});await Memory.load();render();st("Demo history loaded.")}catch(e){st(e.message)}}
+async function syncHS(){st("Syncing…");try{const r=await api("/memory/sync",{});st("Synced "+r.synced+" memories to Hindsight.")}catch(e){st(e.message)}}
+async function ingestGH(){st("Ingesting…");try{const r=await api("/repository/connect",{url:$("#ghUrl").value.trim()});await Memory.load();st("Ingested "+r.ingested+" records from GitHub.")}catch(e){st(e.message)}}
+function connectLive(){const status=$("#live-status"),source=new EventSource("/api/events");
+ source.onopen=async()=>{status.textContent="Live updates connected";status.className="live-status online";try{await Memory.load();if(["Dashboard","Timeline","Incidents"].includes(page))render()}catch(e){}};
+ source.onerror=()=>{status.textContent="Reconnecting to live updates";status.className="live-status offline"};
+ source.addEventListener("memory",async()=>{try{await Memory.load();if(["Dashboard","Timeline","Incidents"].includes(page))render()}catch(e){}})}
+(async()=>{try{window._h=await api("/health");await Memory.load()}catch(e){}render();connectLive()})();
+</script></body></html>

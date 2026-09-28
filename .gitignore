@@ -1,0 +1,5 @@
+.env
+.venv/
+data/*.db
+data/hindsight/
+__pycache__/

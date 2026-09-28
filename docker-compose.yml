@@ -1,0 +1,16 @@
+services:
+  engbrain:
+    build: .
+    ports: ["8000:8000"]
+    env_file: [.env]
+    environment:
+      ENGBRAIN_DB: /app/data/engbrain.db
+    volumes: ["./data:/app/data"]
+  # Optional persistent memory backend (needs an LLM key): set HINDSIGHT_URL=http://hindsight:8888
+  hindsight:
+    image: ghcr.io/vectorize-io/hindsight:latest
+    profiles: ["hindsight"]
+    ports: ["8888:8888", "9999:9999"]
+    environment:
+      HINDSIGHT_API_LLM_API_KEY: ${LLM_API_KEY:-}
+    volumes: ["./data/hindsight:/home/hindsight/.pg0"]
