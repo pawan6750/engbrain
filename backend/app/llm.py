@@ -32,12 +32,31 @@ class OpenAIProvider(AIProvider):
         return (res["choices"][0]["message"]["content"] or "").strip()
 
 
+class GeminiProvider(AIProvider):
+    def __init__(self, key: str, model: str, base_url: str):
+        self.key, self.model, self.base = key, model, base_url.rstrip("/")
+
+    def summarize(self, question, evidence):
+        ctx = "\n".join(f'[{e["id"]}] {e["date"]} {e["type"]}: {e["title"]}. {e["text"]}' for e in evidence)
+        res = http_json("POST", f"{self.base}/models/{self.model}:generateContent?key={self.key}",
+                        {"Content-Type": "application/json"}, {
+                            "systemInstruction": {"parts": [{"text": SYSTEM}]},
+                            "contents": [{"role": "user", "parts": [{
+                                "text": f"Question: {question}\n\nEVIDENCE:\n{ctx}"
+                            }]}],
+                            "generationConfig": {"temperature": 0.1},
+                        })
+        return (res["candidates"][0]["content"]["parts"][0]["text"] or "").strip()
+
+
 def unknown_citations(text: str, evidence: list[dict]) -> list[str]:
     known = {e["id"] for e in evidence}
     return [i for i in re.findall(r"\[([^\]]+)\]", text) if i not in known]
 
 
 def make_provider(cfg: Settings) -> AIProvider:
+    if cfg.llm_provider == "gemini" and cfg.llm_api_key:
+        return GeminiProvider(cfg.llm_api_key, cfg.llm_model, cfg.llm_base_url)
     if cfg.llm_provider == "openai" and cfg.llm_api_key:
         return OpenAIProvider(cfg.llm_api_key, cfg.llm_model, cfg.llm_base_url)
     return MockProvider()

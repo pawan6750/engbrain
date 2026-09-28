@@ -100,6 +100,8 @@ class Adapters(unittest.TestCase):
         self.assertEqual(llm_mod.unknown_citations("ok [INC-103] and [PR-999]", ev), ["PR-999"])
         llm_mod.http_json = lambda *a, **k: {"choices": [{"message": {"content": " Answer [INC-103] "}}]}
         self.assertEqual(llm_mod.OpenAIProvider("k", "m", "http://x").summarize("q", ev), "Answer [INC-103]")
+        llm_mod.http_json = lambda *a, **k: {"candidates": [{"content": {"parts": [{"text": " Answer [INC-103] "}]}}]}
+        self.assertEqual(llm_mod.GeminiProvider("k", "m", "http://x").summarize("q", ev), "Answer [INC-103]")
         self.assertIsNone(llm_mod.MockProvider().summarize("q", ev))
 
 
